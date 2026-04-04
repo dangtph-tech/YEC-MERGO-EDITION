@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Mail, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 
 const SendingPanel = ({ campaignId, onFinish }) => {
   const { t } = useLanguage();
@@ -22,7 +23,7 @@ const SendingPanel = ({ campaignId, onFinish }) => {
 
   const fetchStatus = async () => {
     try {
-      const res = await axios.get(`http://localhost:3001/api/campaigns/${campaignId}`);
+      const res = await axios.get(`${API_BASE_URL}/campaigns/${campaignId}`);
       setStats(res.data.stats);
       setRecipients(res.data.recipients);
       
@@ -42,7 +43,7 @@ const SendingPanel = ({ campaignId, onFinish }) => {
 
     try {
       setError(null);
-      const res = await axios.post(`http://localhost:3001/api/send/${campaignId}`, {
+      const res = await axios.post(`${API_BASE_URL}/send/${campaignId}`, {
         email,
         appPassword: password
       });

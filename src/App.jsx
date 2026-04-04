@@ -6,10 +6,9 @@ import CampaignEditor from './components/CampaignEditor';
 import SendingPanel from './components/SendingPanel';
 import SettingsPanel from './components/Settings';
 import './App.css';
+import { API_BASE_URL } from './config';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, editor, sending
-  const [campaigns, setCampaigns] = useState([]);
   const [activeCampaignId, setActiveCampaignId] = useState(null);
 
   useEffect(() => {
@@ -18,7 +17,7 @@ function App() {
 
   const fetchCampaigns = async () => {
     try {
-      const res = await axios.get('http://localhost:3001/api/campaigns');
+      const res = await axios.get(`${API_BASE_URL}/campaigns`);
       setCampaigns(res.data);
     } catch (err) {
       console.error('Failed to fetch campaigns', err);
@@ -27,7 +26,7 @@ function App() {
 
   const handleSaveCampaign = async (campaignData) => {
     try {
-      const res = await axios.post('http://localhost:3001/api/campaigns', {
+      const res = await axios.post(`${API_BASE_URL}/campaigns`, {
         ...campaignData,
         id: activeCampaignId
       });
@@ -43,7 +42,7 @@ function App() {
   const handleDeleteCampaign = async (id) => {
     if (!window.confirm('Are you sure you want to delete this campaign?')) return;
     try {
-      await axios.post(`http://localhost:3001/api/campaigns/${id}/delete`);
+      await axios.post(`${API_BASE_URL}/campaigns/${id}/delete`);
       fetchCampaigns();
       if (activeCampaignId === id) {
         setActiveCampaignId(null);

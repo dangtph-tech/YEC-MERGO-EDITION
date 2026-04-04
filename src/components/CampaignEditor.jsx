@@ -4,6 +4,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import SafeHtmlEditor from './SafeHtmlEditor';
+import { API_BASE_URL } from '../config';
 
 const CampaignEditor = ({ campaignId, onSave, onSend }) => {
   const { t } = useLanguage();
@@ -45,7 +46,7 @@ const CampaignEditor = ({ campaignId, onSave, onSend }) => {
   const fetchCampaign = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`http://localhost:3001/api/campaigns/${campaignId}`);
+      const res = await axios.get(`${API_BASE_URL}/campaigns/${campaignId}`);
       setCampaign({
         ...res.data,
         content: res.data.content || '',
