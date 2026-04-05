@@ -26,8 +26,6 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-quill-new": "^3.8.3",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^6.0.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
