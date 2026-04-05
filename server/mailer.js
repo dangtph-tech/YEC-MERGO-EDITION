@@ -2,10 +2,16 @@ import nodemailer from 'nodemailer';
 
 async function createTransporter(user, pass) {
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
     auth: {
       user: user,
       pass: pass
+    },
+    family: 4,
+    tls: {
+      rejectUnauthorized: false
     }
   });
 }
