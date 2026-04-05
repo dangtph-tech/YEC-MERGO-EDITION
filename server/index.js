@@ -21,6 +21,20 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
+// Health check and diagnostic endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    envCheck: {
+      hasUrl: !!process.env.SUPABASE_URL || !!process.env.Project_URL || !!process.env.PROJECT_URL,
+      hasKey: !!process.env.SUPABASE_ANON_KEY || !!process.env.SUPABASE_KEY,
+      nodeVersion: process.version,
+      port: process.env.PORT
+    }
+  });
+});
+
 // Create/Update Campaign
 app.post('/api/campaigns', async (req, res) => {
   const { id, name, subject, content, delay, recipients, attachments } = req.body;
