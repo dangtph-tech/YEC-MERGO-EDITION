@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 
 async function createTransporter(user, pass) {
+  console.log(`[MAILER] Creating transporter for ${user} with host: smtp.gmail.com, port: 587 (IPv4 Forced)`);
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 587,
