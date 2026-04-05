@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
-    "start": "node server/index.js"
+    "start": "node --dns-result-order=ipv4first server/index.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
