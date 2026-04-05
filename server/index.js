@@ -3,8 +3,11 @@ import cors from 'cors';
 import multer from 'multer';
 import csv from 'csv-parser';
 import fs from 'fs';
-import { setupDb } from './db.js';
+import { supabase } from './db.js';
 import { sendEmailBatch } from './mailer.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
 const upload = multer({ dest: 'uploads/' });
@@ -18,14 +21,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
-let db;
-
-setupDb().then(database => {
-  db = database;
-  console.log('Database initialized');
-});
-
-// Create/Update Campaign (with auto-save)
+// Create/Update Campaign
 app.post('/api/campaigns', async (req, res) => {
   const { id, name, subject, content, delay, recipients, attachments } = req.body;
 
@@ -34,27 +30,35 @@ app.post('/api/campaigns', async (req, res) => {
     const attachmentsJson = JSON.stringify(attachments || []);
 
     if (id) {
-      await db.run(
-        'UPDATE campaigns SET name = ?, subject = ?, content = ?, delay = ?, attachments = ? WHERE id = ?',
-        [name, subject, content, delay, attachmentsJson, id]
-      );
+      const { error } = await supabase
+        .from('campaigns')
+        .update({ name, subject, content, delay, attachments: attachmentsJson })
+        .eq('id', id);
+      if (error) throw error;
     } else {
-      const result = await db.run(
-        'INSERT INTO campaigns (name, subject, content, delay, attachments) VALUES (?, ?, ?, ?, ?)',
-        [name, subject, content, delay || 1000, attachmentsJson]
-      );
-      campaignId = result.lastID;
+      const { data, error } = await supabase
+        .from('campaigns')
+        .insert([{ name, subject, content, delay: delay || 1000, attachments: attachmentsJson }])
+        .select();
+      if (error) throw error;
+      campaignId = data[0].id;
     }
 
     // Update recipients if provided
     if (recipients && Array.isArray(recipients)) {
-      await db.run('DELETE FROM recipients WHERE campaign_id = ?', [campaignId]);
-      for (const r of recipients) {
-        await db.run(
-          'INSERT INTO recipients (campaign_id, email, name, placeholders) VALUES (?, ?, ?, ?)',
-          [campaignId, r.email, r.name, JSON.stringify(r.placeholders || {})]
-        );
-      }
+      // Supabase's CASCADE delete handles cleaning up recipients when a campaign is updated?
+      // Actually, we'll manually delete and re-insert for now as the current code does.
+      await supabase.from('recipients').delete().eq('campaign_id', campaignId);
+      
+      const newRecipients = recipients.map(r => ({
+        campaign_id: campaignId,
+        email: r.email,
+        name: r.name,
+        placeholders: JSON.stringify(r.placeholders || {})
+      }));
+
+      const { error: rError } = await supabase.from('recipients').insert(newRecipients);
+      if (rError) throw rError;
     }
 
     res.json({ id: campaignId, message: 'Campaign saved' });
@@ -63,24 +67,24 @@ app.post('/api/campaigns', async (req, res) => {
   }
 });
 
-// CSV Upload
+// CSV Upload (remains the same logic, but client-side could handle this too)
 app.post('/api/upload-csv', upload.single('file'), (req, res) => {
   const results = [];
   fs.createReadStream(req.file.path)
     .pipe(csv())
     .on('data', (data) => results.push(data))
     .on('end', () => {
-      fs.unlinkSync(req.file.path); // Clean up
+      fs.unlinkSync(req.file.path); 
       res.json(results);
     });
 });
 
-// Attachment Upload
+// Attachment Upload (remains local for now, but could be Supabase Storage)
 app.post('/api/upload-attachment', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   res.json({
     filename: req.file.originalname,
-    path: req.file.path, // e.g., 'uploads/filename'
+    path: req.file.path,
     mimetype: req.file.mimetype,
     size: req.file.size
   });
@@ -96,13 +100,23 @@ app.post('/api/send/:campaignId', async (req, res) => {
   }
 
   try {
-    const campaign = await db.get('SELECT * FROM campaigns WHERE id = ?', [campaignId]);
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const { data: campaign, error: cError } = await supabase
+      .from('campaigns')
+      .select('*')
+      .eq('id', campaignId)
+      .single();
+    
+    if (cError || !campaign) return res.status(404).json({ error: 'Campaign not found' });
 
     // Start sending in background
-    sendEmailBatch(db, campaignId, email, appPassword, campaign.delay);
+    sendEmailBatch(supabase, campaignId, email, appPassword, campaign.delay);
     
-    await db.run('UPDATE campaigns SET status = "sending" WHERE id = ?', [campaignId]);
+    const { error: uError } = await supabase
+      .from('campaigns')
+      .update({ status: 'sending' })
+      .eq('id', campaignId);
+    if (uError) throw uError;
+
     res.json({ message: 'Sending started' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -112,8 +126,12 @@ app.post('/api/send/:campaignId', async (req, res) => {
 // Get Campaigns
 app.get('/api/campaigns', async (req, res) => {
   try {
-    const campaigns = await db.all('SELECT * FROM campaigns ORDER BY created_at DESC');
-    res.json(campaigns);
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -122,10 +140,18 @@ app.get('/api/campaigns', async (req, res) => {
 // Get Campaign Details
 app.get('/api/campaigns/:id', async (req, res) => {
   try {
-    const campaign = await db.get('SELECT * FROM campaigns WHERE id = ?', [req.params.id]);
-    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    const { data: campaign, error: cError } = await supabase
+      .from('campaigns')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+    if (cError || !campaign) return res.status(404).json({ error: 'Campaign not found' });
     
-    const recipients = await db.all('SELECT * FROM recipients WHERE campaign_id = ?', [req.params.id]);
+    const { data: recipients, error: rError } = await supabase
+      .from('recipients')
+      .select('*')
+      .eq('campaign_id', req.params.id);
+    if (rError) throw rError;
     
     // Count stats
     const stats = {
@@ -144,7 +170,12 @@ app.get('/api/campaigns/:id', async (req, res) => {
 // Delete Campaign
 app.post('/api/campaigns/:id/delete', async (req, res) => {
   try {
-    const campaign = await db.get('SELECT * FROM campaigns WHERE id = ?', [req.params.id]);
+    const { data: campaign, error: fError } = await supabase
+      .from('campaigns')
+      .select('attachments')
+      .eq('id', req.params.id)
+      .single();
+      
     if (campaign && campaign.attachments) {
       const attachments = JSON.parse(campaign.attachments);
       attachments.forEach(att => {
@@ -154,13 +185,14 @@ app.post('/api/campaigns/:id/delete', async (req, res) => {
       });
     }
 
-    await db.run('DELETE FROM campaigns WHERE id = ?', [req.params.id]);
-    await db.run('DELETE FROM recipients WHERE campaign_id = ?', [req.params.id]);
+    const { error: dError } = await supabase.from('campaigns').delete().eq('id', req.params.id);
+    if (dError) throw dError;
+
     res.json({ message: 'Campaign deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

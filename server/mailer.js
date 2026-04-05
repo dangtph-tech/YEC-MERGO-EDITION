@@ -34,10 +34,25 @@ function processTemplate(template, data) {
 }
 
 
-async function sendEmailBatch(db, campaignId, user, pass, delayMs) {
+async function sendEmailBatch(supabase, campaignId, user, pass, delayMs) {
   const transporter = await createTransporter(user, pass);
-  const campaign = await db.get('SELECT * FROM campaigns WHERE id = ?', [campaignId]);
-  const recipients = await db.all('SELECT * FROM recipients WHERE campaign_id = ? AND status = "pending"', [campaignId]);
+  
+  const { data: campaign, error: cError } = await supabase
+    .from('campaigns')
+    .select('*')
+    .eq('id', campaignId)
+    .single();
+
+  const { data: recipients, error: rError } = await supabase
+    .from('recipients')
+    .select('*')
+    .eq('campaign_id', campaignId)
+    .eq('status', 'pending');
+
+  if (cError || rError) {
+    console.error(`Error fetching campaign/recipients:`, cError || rError);
+    return;
+  }
 
   console.log(`Starting campaign ${campaignId} with ${recipients.length} recipients.`);
 
@@ -61,7 +76,6 @@ async function sendEmailBatch(db, campaignId, user, pass, delayMs) {
         to: recipient.email,
         subject: subject,
         html: (() => {
-          // Strip fixed pixel widths to make content responsive
           let responsiveContent = content;
           responsiveContent = responsiveContent.replace(/width\s*=\s*["']?(\d+)["']?/gi, (match, num) => {
             return parseInt(num) > 100 ? 'width="100%"' : match;
@@ -120,20 +134,29 @@ async function sendEmailBatch(db, campaignId, user, pass, delayMs) {
         attachments: mailOptionsAttachments
       });
 
-      await db.run('UPDATE recipients SET status = "sent" WHERE id = ?', [recipient.id]);
+      await supabase
+        .from('recipients')
+        .update({ status: 'sent' })
+        .eq('id', recipient.id);
+      
       console.log(`Sent email to ${recipient.email}`);
 
-      // Wait for the specified delay before the next email
       if (delayMs > 0) {
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
     } catch (error) {
       console.error(`Failed to send to ${recipient.email}:`, error);
-      await db.run('UPDATE recipients SET status = "failed", error_message = ? WHERE id = ?', [error.message, recipient.id]);
+      await supabase
+        .from('recipients')
+        .update({ status: 'failed', error_message: error.message })
+        .eq('id', recipient.id);
     }
   }
 
-  await db.run('UPDATE campaigns SET status = "completed" WHERE id = ?', [campaignId]);
+  await supabase
+    .from('campaigns')
+    .update({ status: 'completed' })
+    .eq('id', campaignId);
 }
 
 export { sendEmailBatch };
