@@ -9,6 +9,8 @@ import './App.css';
 import { API_BASE_URL } from './config';
 
 function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [campaigns, setCampaigns] = useState([]);
   const [activeCampaignId, setActiveCampaignId] = useState(null);
 
   useEffect(() => {
